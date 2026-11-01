@@ -9,4 +9,5 @@ window.CREW = [
   {pid: 'R9XRKUCZ', name: 'Parla'},
   {pid: 'R2396JSA', name: 'Jonathan'},
   {pid: 'R5EKJ7VY', name: 'Andrew'},
+  {pid: 'R9ZHLY4F', name: 'Brad'},
 ];
