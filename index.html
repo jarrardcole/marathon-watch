@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marathon Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --bg:#0b0f17; --panel:#121826; --panel2:#182033; --line:#26304a;
+  --text:#eef2fb; --dim:#8d98b3; --faint:#58627c;
+  --accent:#ff6b35; --home:#ffd23f; --warn:#ffcc4d; --ok:#3ddc97;
+  --cond:'Barlow Condensed',system-ui,sans-serif; --sans:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+#app{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
+
+/* header */
+header{display:flex;align-items:center;gap:clamp(12px,1.4vw,28px);padding:clamp(10px,1vw,18px) clamp(16px,1.6vw,32px);border-bottom:1px solid var(--line)}
+.brand{display:flex;flex-direction:column;flex:none}
+#title{font-family:var(--cond);font-weight:800;font-size:clamp(28px,2.6vw,56px);letter-spacing:.5px;line-height:1;text-transform:uppercase;cursor:text;outline:none}
+#title:focus{border-bottom:2px dashed var(--faint)}
+.sub{color:var(--dim);font-size:clamp(12px,.85vw,17px);margin-top:4px}
+.sub b{color:var(--home);font-weight:600}
+.spacer{flex:1}
+#live{display:flex;align-items:center;gap:8px;font-size:clamp(12px,.85vw,17px);color:var(--dim)}
+#live .pip{width:10px;height:10px;border-radius:50%;background:var(--faint)}
+#live.on .pip{background:var(--ok);animation:pip 2s infinite}
+#live.sim .pip{background:var(--warn)}
+@keyframes pip{0%{box-shadow:0 0 0 0 rgba(61,220,151,.6)}70%,100%{box-shadow:0 0 0 10px rgba(61,220,151,0)}}
+#clock{font-family:var(--cond);font-weight:700;font-size:clamp(30px,3vw,64px);line-height:1;font-variant-numeric:tabular-nums}
+.hbtn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:clamp(13px,.75vw,16px);font-weight:600;white-space:nowrap}
+.hbtn:hover{border-color:var(--dim)}
+.hbtn.primary{background:var(--accent);border-color:var(--accent);color:#111}
+
+/* main: neighborhood | whole course | board */
+main{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.72fr) minmax(360px,1fr);min-height:0}
+.pane{position:relative;min-height:0;border-right:1px solid var(--line)}
+.pane .map{position:absolute;inset:0;background:#0d1320}
+.ptitle{position:absolute;left:14px;top:12px;z-index:800;pointer-events:none;font-family:var(--cond);font-weight:700;text-transform:uppercase;letter-spacing:1px;font-size:clamp(15px,1vw,22px);background:rgba(11,15,23,.8);border:1px solid var(--line);padding:5px 12px;border-radius:8px}
+.ptitle span{color:var(--dim);font-weight:600;margin-left:6px}
+.leaflet-container{background:#0d1320;font-family:var(--sans)}
+.leaflet-control-attribution{background:rgba(11,15,23,.7)!important;color:var(--faint)!important;font-size:10px}
+.leaflet-control-attribution a{color:var(--dim)!important}
+#board{overflow-y:auto;padding:clamp(12px,1vw,22px);display:flex;flex-direction:column;gap:clamp(10px,.7vw,14px)}
+
+/* heads-up banner over the neighborhood map */
+/* bottom right of the block map: the course never runs there (it comes up 4th Ave on the
+   left, crosses Lafayette in the middle, and leaves up Bedford at the top right) */
+#heads{position:absolute;right:14px;bottom:30px;width:min(60%,600px);z-index:850;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.hu{display:flex;align-items:center;gap:14px;background:rgba(11,15,23,.92);border:2px solid var(--c);border-radius:14px;padding:10px 16px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.hu .bell{font-size:clamp(22px,1.6vw,34px)}
+.hu .h1{font-family:var(--cond);font-weight:800;font-size:clamp(22px,1.7vw,38px);line-height:1.05}
+.hu .h1 em{font-style:normal;color:var(--c)}
+.hu .h2{color:var(--dim);font-size:clamp(12px,.85vw,17px)}
+.hu.multi{align-items:flex-start}
+.hu .rows{flex:1;min-width:0}
+.hu .row{display:flex;align-items:baseline;gap:14px;font-family:var(--cond);font-weight:800;font-size:clamp(22px,1.6vw,34px);line-height:1.15}
+.hu .row em{font-style:normal;color:var(--c);min-width:5.5em}
+.hu .row span{font-variant-numeric:tabular-nums}
+.hu .row i{font-style:normal;font-family:var(--sans);font-weight:500;font-size:clamp(12px,.8vw,16px);color:var(--dim);margin-left:auto}
+.hu.now{background:color-mix(in srgb,var(--c) 35%,#0b0f17);animation:flash 1.2s ease-in-out infinite}
+@keyframes flash{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--c) 40%,transparent),0 8px 30px rgba(0,0,0,.5)}}
+
+/* runner card: one hero number on the right, one line of facts under the name */
+.card{flex:none;position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:clamp(10px,.7vw,16px) clamp(14px,1vw,22px) clamp(10px,.7vw,16px) clamp(20px,1.3vw,28px);overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:var(--c)}
+.card.soon{border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset}
+.card.finished{background:linear-gradient(90deg,color-mix(in srgb,var(--c) 18%,var(--panel)),var(--panel) 60%)}
+.card.waiting{opacity:.55}
+.crow{display:flex;align-items:center;gap:clamp(10px,.8vw,16px)}
+.cmain{min-width:0;flex:1}
+.ava{flex:none;width:clamp(48px,3.3vw,72px);height:clamp(48px,3.3vw,72px);border-radius:50%;background:var(--c) center/cover no-repeat;border:3px solid var(--c);display:flex;align-items:center;justify-content:center;font-family:var(--cond);font-weight:800;font-size:clamp(24px,1.7vw,36px);color:#0b0f17;cursor:pointer;position:relative}
+.ava.has{color:transparent}
+.ava:not(.has)::after{content:"+ photo";position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);font-family:var(--sans);font-size:9px;font-weight:700;color:var(--dim);background:var(--panel);padding:0 4px;border-radius:4px;white-space:nowrap;opacity:0}
+.card:hover .ava:not(.has)::after{opacity:1}
+.ava.flag{background:#1a2130;cursor:default;font-family:var(--sans);font-weight:400;font-size:clamp(28px,2vw,42px)}
+.ava.flag::after{display:none}
+.rm .tag img{width:1.25em;height:1.25em;border-radius:50%;object-fit:cover;vertical-align:-.25em;margin:0 5px 0 -5px;border:2px solid #0b0f17}
+.cname{font-family:var(--cond);font-weight:800;font-size:clamp(26px,2vw,46px);line-height:1.05;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cfacts{color:var(--dim);font-size:clamp(13px,.85vw,18px);margin-top:3px;line-height:1.3}
+.cfacts span{white-space:nowrap}
+.cfacts b{color:var(--text);font-weight:600}
+.cfacts .warn{color:var(--warn)}
+.cfacts .hm{color:var(--home)}
+.chero{text-align:right;white-space:nowrap}
+.ckicker{font-size:clamp(10px,.65vw,14px);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--dim)}
+.ckicker .warn{color:var(--warn)}
+.cbig{font-family:var(--cond);font-weight:800;font-size:clamp(28px,2.2vw,50px);line-height:1;color:var(--c);font-variant-numeric:tabular-nums}
+.cbig.rough{opacity:.7}
+.soon .cbig.now{animation:flash2 1.2s ease-in-out infinite}
+@keyframes flash2{50%{opacity:.55}}
+/* the bar is the course; the flag at its end is the finish: estimated clock time, then the real race time */
+.cbarrow{display:flex;align-items:center;gap:10px;margin-top:clamp(8px,.6vw,12px)}
+.cbar{flex:1;height:6px;border-radius:3px;background:var(--panel2);position:relative}
+.cflag{flex:none;font-family:var(--cond);font-weight:700;font-size:clamp(15px,.95vw,20px);color:var(--dim);font-variant-numeric:tabular-nums;line-height:1}
+.cflag.done{color:var(--c)}
+.cbar i{position:absolute;left:0;top:0;bottom:0;background:var(--c);border-radius:3px}
+.cbar u{position:absolute;top:0;bottom:0;background:var(--c);opacity:.35;text-decoration:none}
+.cbar s{position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1px;background:var(--home);border-radius:2px}
+.cx{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--faint);font-size:20px;line-height:1;opacity:0;padding:4px}
+.card:hover .cx{opacity:1}
+/* nobody scrolls a TV: fitBoard() steps down to these until every card fits */
+#board.tight{gap:8px}
+#board.tight .card{padding-top:7px;padding-bottom:7px}
+#board.tight .cname,#board.tight .cbig{font-size:clamp(22px,1.55vw,36px)}
+#board.tight .ava{width:clamp(40px,2.6vw,56px);height:clamp(40px,2.6vw,56px);font-size:clamp(20px,1.3vw,28px)}
+#board.tight .cfacts{font-size:clamp(12px,.75vw,16px)}
+#board.tight .spots{margin-top:5px;margin-left:calc(clamp(40px,2.6vw,56px) + clamp(10px,.8vw,16px))}
+#board.tight .cbarrow{margin-top:6px}
+#board.tighter .spots{display:none}
+/* First step when the board is full: leader cards drop to one line (no bar, no chips). */
+#board.leanlead .card.lead{padding-top:6px;padding-bottom:6px}
+#board.leanlead .card.lead .cbarrow,#board.leanlead .card.lead .spots{display:none}
+#board.leanlead .card.lead .ava{width:clamp(36px,2.3vw,48px);height:clamp(36px,2.3vw,48px);font-size:clamp(20px,1.4vw,30px)}
+#board.leanlead .card.lead .cname,#board.leanlead .card.lead .cbig{font-size:clamp(20px,1.35vw,30px)}
+#board.leanlead .card.lead .cmain{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}
+#board.leanlead .card.lead .cfacts{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#board.leanlead .card.lead .cname{flex:none;overflow:visible}
+#board.leanlead .card.lead .ckicker{display:none}
+.lk{display:none}
+#board.leanlead .card.lead .chero{display:flex;align-items:center;gap:6px}
+#board.leanlead .card.lead .lk{display:inline;font-size:clamp(16px,1vw,22px)}
+#board.tightest{gap:5px}
+#board.tightest .card{padding-top:4px;padding-bottom:4px}
+#board.tightest .cbarrow{margin-top:3px}
+.empty{color:var(--dim);text-align:center;margin:auto;max-width:380px;line-height:1.6;font-size:clamp(14px,.9vw,18px)}
+.empty .big{font-family:var(--cond);font-size:clamp(28px,2vw,40px);font-weight:700;color:var(--text);margin-bottom:8px}
+
+/* course strip */
+footer{border-top:1px solid var(--line);padding:10px clamp(16px,1.6vw,32px) 14px}
+#strip{position:relative;height:var(--h,86px)}
+#track{position:absolute;left:0;right:0;bottom:22px;height:14px;border-radius:7px;overflow:hidden;display:flex}
+.boro{height:100%;display:flex;align-items:center;justify-content:center;font-size:clamp(9px,.55vw,12px);font-weight:700;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden}
+.tick{position:absolute;bottom:0;transform:translateX(-50%);font-size:clamp(11px,.65vw,14px);color:var(--faint);font-variant-numeric:tabular-nums}
+.shome{position:absolute;bottom:16px;width:4px;height:26px;margin-left:-2px;background:var(--home);border-radius:2px}
+.shome::after{content:"HOME";position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;letter-spacing:1px;color:var(--home)}
+.sdot{position:absolute;bottom:22px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--c);border:2px solid var(--bg)}
+.sband{position:absolute;bottom:25px;height:8px;background:var(--c);opacity:.45;border-radius:4px}
+.sghost{position:absolute;bottom:20px;width:18px;height:18px;margin-left:-9px;border-radius:50%;border:3px solid var(--c);background:var(--bg);animation:ghost 2.4s ease-in-out infinite}
+.slabel{position:absolute;transform:translateX(-50%);font-family:var(--cond);font-weight:700;font-size:clamp(15px,.9vw,20px);color:var(--c);white-space:nowrap;line-height:1}
+.slabel::after{content:"";position:absolute;left:50%;top:100%;width:1px;height:var(--stem,6px);background:var(--c);opacity:.5}
+@keyframes ghost{50%{opacity:.45;transform:scale(1.15)}}
+
+/* map markers */
+.rm{position:relative;width:0;height:0}
+.rm .ring{position:absolute;left:-11px;top:-11px;width:22px;height:22px;border-radius:50%;border:3px solid var(--c);background:rgba(11,15,23,.85);animation:ghost 2.4s ease-in-out infinite}
+.rm .tag{position:absolute;top:-14px;left:16px;font-family:var(--cond);font-weight:800;font-size:var(--fs,20px);background:var(--c);color:#0b0f17;padding:1px 8px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.rm.done .ring{animation:none;background:var(--c)}
+.big-tags .rm .tag{--fs:clamp(20px,1.5vw,32px);top:-18px}
+.big-tags .rm .ring{left:-14px;top:-14px;width:28px;height:28px}
+.mm,.mat,.endpt{width:max-content}
+.mm{font-family:var(--cond);font-weight:700;font-size:13px;color:var(--dim);white-space:nowrap;text-shadow:0 0 4px #000,0 0 4px #000}
+.mat{font-family:var(--cond);font-weight:800;font-size:clamp(13px,.85vw,18px);color:#0b0f17;background:#cfd8ff;padding:1px 7px;border-radius:5px;white-space:nowrap}
+/* mats near home: the label sits above the dot, with each friend's actual crossing time stacked on top */
+.matbox{width:max-content;transform:translate(-50%,calc(-100% - 10px));display:flex;flex-direction:column-reverse;align-items:center;gap:2px}
+.matrow{font-family:var(--cond);font-weight:700;font-size:clamp(13px,.85vw,18px);line-height:1.1;color:var(--text);background:rgba(11,15,23,.85);border-left:4px solid var(--c);padding:0 6px;border-radius:3px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.matrow b{color:var(--c);font-weight:800;margin-right:5px}
+.endpt{font-family:var(--cond);font-weight:800;font-size:15px;letter-spacing:1px;color:#0b0f17;background:#fff;padding:2px 7px;border-radius:5px;white-space:nowrap}
+/* home is a place, not a runner: a still map pin with an outlined label */
+.homepin{position:relative;width:0;height:0}
+.homepin .pin{position:absolute;left:-17px;top:-41px;width:34px;height:34px;background:var(--home);border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 0 0 3px #0b0f17,0 4px 12px rgba(0,0,0,.6)}
+.homepin .pin span{display:block;transform:rotate(45deg);text-align:center;line-height:34px;font-size:17px}
+.homepin .lbl{position:absolute;top:-44px;left:26px;width:max-content;font-family:var(--cond);font-weight:700;font-size:clamp(15px,1vw,22px);letter-spacing:.5px;text-transform:uppercase;color:var(--home);background:rgba(11,15,23,.88);border:2px solid var(--home);padding:0 8px;border-radius:6px}
+.homepin.small .pin{left:-10px;top:-24px;width:20px;height:20px;box-shadow:0 0 0 2px #0b0f17}
+.homepin.small .pin span{line-height:20px;font-size:10px}
+.homepin.small .lbl{display:none}
+
+/* pro leaders */
+/* in the header, between the title and the clock: one line per race, leader + gaps */
+#pros{display:none;flex-direction:column;gap:3px;min-width:0;flex:0 1 auto;overflow:hidden;margin-left:clamp(12px,2vw,48px)}
+#pros.on{display:flex}
+.pro{display:flex;align-items:baseline;gap:clamp(8px,.8vw,16px);white-space:nowrap;font-size:clamp(13px,.85vw,18px)}
+.pro h4{margin:0;width:clamp(120px,8.5vw,180px);font-family:var(--cond);font-weight:700;font-size:clamp(14px,.95vw,20px);letter-spacing:.8px;text-transform:uppercase;color:var(--dim)}
+.pro h4 b{color:var(--text)}
+.pro div{display:flex;gap:6px}
+.pro div em{font-style:normal;color:var(--dim);font-variant-numeric:tabular-nums}
+.pro div:first-of-type em{color:var(--text)}
+.pro div:nth-of-type(n+3){display:none}
+
+/* where to catch them next: place, then a compact time window */
+.spots{display:flex;gap:6px;margin-top:clamp(7px,.5vw,10px);margin-left:calc(clamp(48px,3.3vw,72px) + clamp(10px,.8vw,16px));overflow:hidden}
+.chip{flex:none;display:flex;flex-direction:column;background:var(--panel2);border-radius:8px;padding:3px 10px 4px;line-height:1.15}
+.chip i{font-style:normal;font-size:clamp(11px,.68vw,14px);font-weight:600;color:var(--dim);white-space:nowrap}
+.chip.fin{background:color-mix(in srgb,var(--c) 14%,var(--panel2))}
+.chip.fin i{color:var(--text)}
+.chip b{font-family:var(--cond);font-weight:700;font-size:clamp(16px,1vw,22px);color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* toasts */
+#toasts{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:10px;z-index:900;pointer-events:none;width:min(440px,70%)}
+.toast{background:rgba(18,24,38,.95);border:1px solid var(--line);border-left:8px solid var(--c);border-radius:12px;padding:12px 16px;box-shadow:0 8px 30px rgba(0,0,0,.5);animation:tin .4s ease-out}
+.toast .t1{font-family:var(--cond);font-weight:800;font-size:clamp(22px,1.5vw,32px);line-height:1.1}
+.toast .t2{color:var(--dim);font-size:clamp(13px,.8vw,17px);margin-top:2px}
+.toast.fin{border-color:var(--c);background:color-mix(in srgb,var(--c) 30%,#121826)}
+.toast.fin .t1{font-size:clamp(28px,2vw,42px)}
+.toast.out{opacity:0;transform:translateX(30px);transition:.5s}
+@keyframes tin{from{opacity:0;transform:translateX(40px)}}
+
+/* add dialog */
+#dlg{position:fixed;inset:0;background:rgba(5,8,14,.75);display:none;align-items:flex-start;justify-content:center;padding-top:10vh;z-index:2000}
+#dlg.open{display:flex}
+.dbox{width:min(560px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px}
+.dbox h2{font-family:var(--cond);font-size:30px;margin:0 0 4px;text-transform:uppercase}
+.dbox p{color:var(--dim);margin:0 0 14px;font-size:14px}
+.srow{display:flex;gap:8px}
+#q{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--text);font-size:17px;outline:none}
+#q:focus{border-color:var(--accent)}
+#results{margin-top:12px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.res{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid transparent;border-radius:10px;padding:10px 14px;text-align:left;width:100%}
+.res:hover{border-color:var(--accent)}
+.res .rn{font-weight:600;font-size:16px}
+.res .rm2{color:var(--dim);font-size:13px}
+.res .radd{margin-left:auto;color:var(--accent);font-weight:700;font-size:14px}
+.res.added{opacity:.45;pointer-events:none}
+.res.added .radd{color:var(--dim)}
+.msg{color:var(--dim);font-size:14px;padding:8px 2px}
+
+/* laptop: neighborhood + course stacked on the left, board on the right */
+@media (max-width:1399px) and (min-width:901px){
+  main{grid-template-columns:minmax(0,1.25fr) minmax(340px,1fr);grid-template-rows:1.25fr 1fr}
+  #nearpane{grid-row:1;grid-column:1}
+  #wholepane{grid-row:2;grid-column:1;border-top:1px solid var(--line)}
+  #board{grid-row:1 / span 2;grid-column:2}
+  /* small maps: one-line banners, leader + runner-up only */
+  .hu{padding:5px 12px;gap:10px}
+  .hu .h1,.hu .row{font-size:18px}
+  .hu .h2,.hu .bell{display:none}
+  .pro div:nth-of-type(3){display:none}
+}
+/* Phone: one scrolling column. Cards first (door times are what you check on a phone),
+   then the block map, then the whole course. Header shrinks to title, clock and + Add. */
+@media (max-width:900px){
+  html,body{overflow:auto;overflow-x:hidden}
+  #app{height:auto;min-height:100vh;display:block}
+  header{position:sticky;top:0;z-index:1000;background:var(--bg);flex-wrap:wrap;gap:4px 10px;padding:10px 16px}
+  #title{font-size:24px}
+  .sub{font-size:12px;margin-top:2px}
+  #pros,#sharebtn,#fsbtn{display:none!important}
+  #live{order:5;width:100%;font-size:12px}
+  #clock{font-size:30px}
+  #addbtn{padding:7px 10px;font-size:13px}
+  main{display:flex;flex-direction:column}
+  #board{order:-1;overflow:visible;padding:12px 12px 16px;gap:10px}
+  .pane{height:48vh;min-height:300px;border-right:0;border-top:1px solid var(--line)}
+  #wholepane{height:62vh}
+  .card{padding:10px 12px 10px 18px}
+  .cname{font-size:26px}
+  .cbig{font-size:26px}
+  .ava{width:44px;height:44px;font-size:22px}
+  .cfacts{font-size:13px}
+  .spots{margin-left:0;flex-wrap:wrap}
+  .chip b{font-size:16px}
+  #heads{left:10px;right:10px;bottom:24px;width:auto}
+  .hu{padding:6px 12px;gap:10px}
+  .hu .h1,.hu .row{font-size:19px}
+  .hu .bell{font-size:20px}
+  #toasts{left:10px;right:10px;width:auto}
+  .boro{font-size:0}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div id="title" contenteditable="true" spellcheck="false">Marathon Watch</div>
+      <div class="sub">NYC Marathon · Nov 1 · cheering from <b id="homename"></b></div>
+    </div>
+    <div id="pros"></div>
+    <div class="spacer"></div>
+    <div id="live"><span class="pip"></span><span id="livetext">Connecting…</span></div>
+    <div id="clock">--:--</div>
+    <button class="hbtn" id="sharebtn" title="Copy a link that opens this page with the same runners">Copy link</button>
+    <button class="hbtn" id="fsbtn" title="Full screen (F)">Full screen</button>
+    <button class="hbtn primary" id="addbtn" title="Add a runner (A)">+ Add runner</button>
+  </header>
+  <main>
+    <div class="pane" id="nearpane">
+      <div class="map" id="nearmap"></div>
+      <div class="ptitle" id="neartitle"></div>
+      <div id="heads"></div>
+      <div id="toasts"></div>
+    </div>
+    <div class="pane" id="wholepane">
+      <div class="map" id="wholemap"></div>
+      <div class="ptitle">Whole course<span>26.2 mi</span></div>
+    </div>
+    <div id="board"></div>
+  </main>
+  <footer><div id="strip"><div id="track"></div></div></footer>
+</div>
+
+<div id="dlg">
+  <div class="dbox">
+    <h2>Add a runner</h2>
+    <p>Type a <b>name</b> (first and last, or just last) <b>or a bib number</b>. Pick the right person from the list.</p>
+    <form class="srow" id="sform">
+      <input id="q" autocomplete="off" placeholder="Name or bib, e.g. Jordan Lee or 31415">
+      <button class="hbtn primary" type="submit">Search</button>
+    </form>
+    <div id="results"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Fresh copies on every load: the TV's browser otherwise reuses old ones (it missed a crew.js update on race day). -->
+<script>['course.js', 'photos/photos.js', 'crew.js', 'mode.js'].forEach(f => document.write('<script src="' + f + '?' + Date.now() + '"><\/script>'));</script>
+<script>
+// ---- Config -------------------------------------------------------------
+// RTRT.me is the timing service behind liveresults.nyrr.org. This is the same
+// public web key that page uses. We only ask for our own runners' splits.
+const API = 'https://api.rtrt.me';
+const AUTH = 'appid=52139b797871851e0800638e&token=CDFE5444E04738BB6FA2';
+// A page at the plain address (no query) takes its settings from mode.js on the Mac, so the TV
+// can be flipped between the live race and a demo without touching its address bar.
+const PLAIN = !location.search;
+const MODE = window.MODE || {name: 'live'};
+const DEMO = PLAIN && MODE.name === 'demo' && Date.now() < (MODE.until || 0);
+const qs = new URLSearchParams(DEMO ? MODE.params : location.search);
+if (PLAIN){
+  const loaded = JSON.stringify(MODE);
+  setInterval(async () => {
+    try {
+      const txt = await (await fetch('mode.js?' + Date.now(), {cache: 'no-store'})).text();
+      const next = JSON.stringify(new Function('window', txt + ';return window.MODE')({}));
+      if (next !== loaded || (DEMO && Date.now() >= MODE.until)) location.reload();
+    } catch {}
+  }, 5000);
+}
+const EVENT = qs.get('event') || 'NYRR-NY2026';
+const TZ = 'America/New_York';
+const POLL_RUNNING = 60e3;      // once a minute per runner on the course
+const POLL_WAITING = 180e3;     // every 3 min before their start mat
+const MIN_GAP = 2500;           // never more than one request every 2.5 s
+const DEFAULT_PACE = 10.5 * 60e3; // ms per mile, only until a runner's first mile split
+const HEADS_UP = 12 * 60e3;
+// 2026 wave start times from the feed (wave-N-clock-setting categories). Which wave each runner is in isn't published.
+const WAVES = EVENT === 'NYRR-NY2026' ? ['09:10', '09:45', '10:20', '10:55', '11:30'].map(h => Date.parse(`2026-11-01T${h}:00-05:00`)) : [];
+const TOAST_POINTS = ['START', 'HALF', '20M', 'FINISH'];     // banner when someone is this close to the door
+// The apartment sits ~16 m off the course line on Lafayette Ave, between the mile 8 and 9 mats.
+const HOME = {name: '172 Lafayette', lat: 40.687612, lng: -73.970019, mile: 8.444};
+const NEAR = [6.9, 9.7];        // stretch of course the neighborhood map frames
+// Common places to meet a runner later on, for friends heading out on the course.
+// The course has a big sign at every mile, so chips name the mile; the place is the tooltip.
+const SPOTS = [
+  [6, 'Mile 6', '4th Ave'], [11, 'Mile 11', 'Williamsburg'], [13.11, 'Half', 'Pulaski Bridge'],
+  [16, 'Mile 16', '1st Ave'], [18, 'Mile 18', '1st Ave'], [20, 'Mile 20', 'Bronx'], [23, 'Mile 23', '5th Ave'],
+  [24, 'Mile 24', 'Central Park'], [26, 'Mile 26', 'Columbus Circle'],
+];
+const PROS = [
+  {cat: 'top-women-overall-marathon', title: 'Pro women', tag: 'W'},
+  {cat: 'top-men-overall-marathon', title: 'Pro men', tag: 'M'},
+];
+const POLL_PROS = 90e3;
+const COLORS = ['#ff5d73','#3ddc97','#4cc9f0','#c77dff','#ff9f1c','#a0e86f','#f72585','#7aa2ff','#ffa8e2','#2ec4b6'];
+const FULL = COURSE.miles;
+const BOROS = [ // approximate borough boundaries, in miles
+  ['Staten Is.', 0, 2.0, '#3b4a7a'], ['Brooklyn', 2.0, 13.1, '#2f5d62'], ['Queens', 13.1, 15.3, '#6b4f7a'],
+  ['Manhattan', 15.3, 19.9, '#7a5a3b'], ['Bronx', 19.9, 21.0, '#7a3b4a'], ['Manhattan', 21.0, FULL, '#7a5a3b'],
+];
+const STORE = 'marathon-watch:' + EVENT;
+
+// Replay mode for testing against a past race: ?event=NYRR-NY2025&sim=2025-11-02T11:45:00-05:00&speed=20
+const SIM = qs.get('sim') ? Date.parse(qs.get('sim')) : null;
+const SPEED = +qs.get('speed') || 1;
+const bootReal = Date.now();
+const now = () => SIM ? SIM + (Date.now() - bootReal) * SPEED : Date.now();
+
+// ---- Helpers ------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tfmt = new Intl.DateTimeFormat('en-US', {timeZone: TZ, hour: 'numeric', minute: '2-digit'});
+const clockStr = ms => tfmt.format(ms).replace(/\s?[AP]M$/, m => m.trim().toLowerCase());
+const shortClock = ms => clockStr(ms).replace(/[ap]m$/, '');
+// "12:30–12:40" for the big number, "12:30–40" in chips; no am/pm on the board (it's daytime).
+const hhmm = ms => shortClock(ms).trim();
+const rng = (a, b, compact) => { const x = hhmm(a), y = hhmm(b);
+  return compact && x.split(':')[0] === y.split(':')[0] ? `${x}–${y.split(':')[1]}` : `${x}–${y}`; };
+const span = (a, b) => { const x = clockStr(a), y = clockStr(b); return x.slice(-2) === y.slice(-2) ? `${shortClock(a)}–${y}` : `${x}–${y}`; };
+const pointMiles = Object.fromEntries(COURSE.points.map(p => [p[0], p[1]]));
+const pointLabel = Object.fromEntries(COURSE.points.map(p => [p[0], p[2]]));
+const matMiles = COURSE.points.map(p => p[1]);
+function netStr(s){ // "01:17:54.69" -> "1:17:54"
+  if (!s) return '';
+  return s.split('.')[0].replace(/^0(?=\d:)/, '').replace(/^00:/, '');
+}
+function netMs(s){ if (!s) return null; const [h,m,x] = s.split(':').map(parseFloat); return ((h*60+m)*60+x)*1000; }
+function paceStr(ms){ const s = Math.round(ms/1000); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
+function placeName(p){
+  if (p === 'START') return 'Start';
+  if (p === 'FINISH') return 'Finish';
+  if (p === 'HALF') return 'Halfway';
+  const m = p.match(/^(\d+)M$/); if (m) return 'Mile ' + m[1];
+  if (/^\d+K$/.test(p)) return p;
+  return pointLabel[p] || p;
+}
+const milesWord = m => (Math.round(m*2)/2).toFixed(1).replace(/\.0$/, '').replace(/\.5$/, '½');
+const mins = ms => Math.max(0, Math.round(ms / 60e3));
+const ago = ms => { const m = mins(ms); return m < 1 ? 'just now' : m === 1 ? '1 min ago' : m < 60 ? m + ' min ago' : Math.floor(m/60) + 'h ' + (m%60) + 'm ago'; };
+const inMin = ms => { const m = mins(ms); return m < 1 ? 'any second' : m < 60 ? `in ~${m} min` : `in ~${Math.floor(m/60)}h ${m%60}m`; };
+
+// ---- Course geometry ----------------------------------------------------
+const POLY = COURSE.poly, POLY_END = POLY[POLY.length-1][2], SCALE = POLY_END / FULL;
+function at(miles){
+  const d = Math.max(0, Math.min(FULL, miles)) * SCALE;
+  let lo = 0, hi = POLY.length - 1;
+  while (hi - lo > 1){ const mid = (lo+hi) >> 1; POLY[mid][2] <= d ? lo = mid : hi = mid; }
+  const a = POLY[lo], b = POLY[hi], f = b[2] > a[2] ? (d - a[2]) / (b[2] - a[2]) : 0;
+  return [a[0] + (b[0]-a[0])*f, a[1] + (b[1]-a[1])*f];
+}
+function segment(m1, m2){
+  const pts = [at(m1)];
+  for (const p of POLY) if (p[2] > m1*SCALE && p[2] < m2*SCALE) pts.push([p[0], p[1]]);
+  pts.push(at(m2));
+  return pts;
+}
+
+// ---- State --------------------------------------------------------------
+let runners = [];
+let crewSeen = [];   // crew.js pids this browser has already picked up, so a removed one stays removed
+function save(){
+  try { localStorage.setItem(STORE, JSON.stringify({title: $('#title').textContent.trim(), crew: crewSeen, runners: runners.map(({pid,name,full,bib,color}) => ({pid,name,full,bib,color}))})); } catch {}
+}
+function load(){
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORE)); } catch {}
+  if (saved?.title) $('#title').textContent = saved.title;
+  const fromUrl = qs.get('runners');
+  // Someone added to crew.js after this browser saved its list (the TV) still shows up.
+  const crew = EVENT === 'NYRR-NY2026' && !fromUrl ? (window.CREW || []) : [];
+  const newCrew = crew.filter(c => !(saved?.crew || []).includes(c.pid));
+  crewSeen = [...new Set([...(saved?.crew || []), ...crew.map(c => c.pid)])];
+  const list = fromUrl
+    // pid~Name, or pid~Name~facePid to borrow another runner's photo (for replay demos)
+    ? fromUrl.split(',').filter(Boolean).map(s => { const [pid, name, face] = s.split('~').map(decodeURIComponent);
+        return {pid, name: name || pid, photo: face && window.PHOTOS?.[face]}; })
+    : saved?.runners?.length ? [...saved.runners, ...newCrew] : crew;
+  if (qs.get('title')) $('#title').textContent = qs.get('title');
+  list.forEach(r => addRunner(r, true));
+}
+function nextColor(){
+  const used = new Set(runners.map(r => r.color));
+  return COLORS.find(c => !used.has(c)) || COLORS[runners.length % COLORS.length];
+}
+function addRunner(r, quiet){
+  if (runners.some(x => x.pid === r.pid)) return;
+  let photo = null;
+  try { photo = localStorage.getItem('marathon-watch:photo:' + r.pid); } catch {}
+  photo = r.photo || photo || window.PHOTOS?.[r.pid] || null;
+  runners.push({pid: r.pid, name: r.name, full: r.full || r.name, bib: r.bib || '', color: r.color || nextColor(),
+    photo, raw: null, splits: [], lastFetch: 0, error: null, seen: -1, L: {}});
+  save(); render();
+  if (!quiet) schedule(true);
+}
+function removeRunner(pid){
+  const r = runners.find(x => x.pid === pid);
+  if (r) Object.values(r.L).forEach(g => [g.band, g.mat, g.pin].forEach(l => l.remove()));
+  runners = runners.filter(x => x.pid !== pid);
+  save(); render();
+}
+
+// ---- Data ---------------------------------------------------------------
+async function api(path, params = ''){
+  const res = await fetch(`${API}/events/${EVENT}/${path}?${AUTH}${params}`);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+async function fetchSplits(r){
+  r.lastFetch = Date.now();
+  const pid = r.pid;
+  try {
+    const d = await api(`profiles/${pid}/splits`, '&max=100');
+    if (r.pid !== pid) return;   // a leader card switched runner while we waited
+    r.raw = (d.list || []).map(s => ({
+      point: s.point, miles: pointMiles[s.point], t: parseFloat(s.epochTime) * 1000,
+      net: s.netTime || s.time, avg: s.milePaceAvg,
+    })).filter(s => s.miles != null && isFinite(s.t)).sort((a, b) => a.miles - b.miles);
+    if (!r.bib && d.list?.[0]) r.bib = d.list[0].bib_display || d.list[0].bib || '';
+    r.error = null;
+    lastOk = Date.now();
+  } catch (e) {
+    r.error = e.message;
+  }
+}
+// Pro leaderboards: ask which mat the leaders reached last, then the top 5 there.
+// Replay mode pulls the whole category once and works out the board for the replay clock.
+const normPro = s => ({pid: s.pid, name: s.name, lname: s.lname || s.name.split(' ').slice(-1)[0], iso: s.country_iso,
+  point: s.point, miles: pointMiles[s.point], t: parseFloat(s.epochTime) * 1000, net: s.netTime || s.time, avg: s.milePaceAvg, place: +s.place || 0});
+PROS.forEach(p => { p.lastFetch = 0; p.board = null; });
+async function fetchPro(p){
+  p.lastFetch = Date.now();
+  try {
+    if (SIM){
+      const d = await api(`categories/${p.cat}/splits`, '&max=2000');
+      p.all = (d.list || []).map(normPro).filter(s => s.miles != null);
+      return;
+    }
+    const d1 = await api(`categories/${p.cat}/splits`, '&max=1');
+    const pt = d1.info?.latestPoint;
+    if (!pt || pt === 'START' || pointMiles[pt] == null){ p.board = null; return; }
+    const d2 = await api(`categories/${p.cat}/splits/${pt}`, '&max=5');
+    p.board = (d2.list || []).map(normPro).sort((a, b) => a.place - b.place);
+    p.done = pt === 'FINISH';
+  } catch {}
+}
+function proBoard(p, t){
+  if (!SIM) return p.board;
+  if (!p.all) return null;
+  const seen = p.all.filter(s => s.t <= t && s.point !== 'START');
+  if (!seen.length) return null;
+  const top = Math.max(...seen.map(s => s.miles));
+  return seen.filter(s => s.miles === top).sort((a, b) => a.t - b.t).slice(0, 5).map((s, i) => ({...s, place: i + 1}));
+}
+const flagOf = iso => iso && iso.length === 2 ? String.fromCodePoint(...[...iso.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0))) : '';
+// The leading woman and man get cards like ours. Who leads changes during the race, so each
+// card follows the top of its pro board and swaps runner when the lead changes.
+const LEADS = PROS.map(p => ({pro: p, lead: p.tag === 'W' ? 'women' : 'men', pid: null, name: '', full: '', bib: '',
+  color: p.tag === 'W' ? '#f2e3c2' : '#c2d3ee', photo: null, raw: null, splits: [], lastFetch: 0, error: null, seen: -1, L: {}}));
+function leaders(t){
+  return LEADS.filter(l => {
+    const top = proBoard(l.pro, t)?.[0];
+    if (top?.pid && top.pid !== l.pid){
+      Object.assign(l, {pid: top.pid, name: top.lname, full: top.name, flag: flagOf(top.iso), raw: null, splits: [], lastFetch: 0, seen: -1, done: false});
+      // Replay already has every pro split; live asks for the new leader's splits.
+      if (SIM) l.raw = l.pro.all.filter(s => s.pid === top.pid).sort((a, b) => a.miles - b.miles);
+    }
+    return !!l.pid;
+  });
+}
+
+// One request at a time, oldest first, gently spaced.
+let lastReq = 0, lastOk = 0, busy = false;
+async function schedule(force){
+  if (busy) return;
+  if (!force && Date.now() - lastReq < MIN_GAP) return;
+  const due = [
+    ...[...runners, ...LEADS.filter(l => l.pid)].filter(r => {
+      if (r.raw && SIM) return false;                     // replay: one fetch is enough
+      if (r.done && r.lastFetch) return false;            // finished: stop asking
+      const every = r.splits.length ? POLL_RUNNING : POLL_WAITING;
+      return !r.lastFetch || Date.now() - r.lastFetch >= every;
+    }).map(r => ({at: r.lastFetch, go: () => fetchSplits(r)})),
+    ...PROS.filter(p => SIM ? !p.lastFetch : !p.done && (!p.lastFetch || Date.now() - p.lastFetch >= (p.board ? POLL_PROS : POLL_WAITING)))
+      .map(p => ({at: p.lastFetch, go: () => fetchPro(p)})),
+  ].sort((a, b) => a.at - b.at);
+  if (!due.length) return;
+  busy = true; lastReq = Date.now();
+  await due[0].go();
+  busy = false;
+  render();
+}
+
+// ---- Estimates ----------------------------------------------------------
+// We know exactly when someone crossed a mat. Between mats we only guess,
+// so the guess is capped at the next mat and shown as a soft band.
+// Every mile isn't equal, so predictions work in "effort miles": hills (COURSE_HILLS, from an
+// elevation profile) times the slowdown most amateurs show. Checked Nov 1 on eight 2025 runners
+// (3:21–5:46): typical pace vs their first 10 miles was +5% by the half, +20% from mile 21,
+// ranging 0% to +59%. Elites barely slow, so it phases in from 5:00/mi (none) to 6:15/mi (full);
+// a 6:57/mi runner in the sample slowed 30%.
+// calibration/model.py replays those runners and scores this model.
+const SLOW = 0.2;
+const slowShape = x => x <= 10 ? 0 : x <= 15 ? .5 * (x - 10) / 5 : x <= 21 ? .5 + .5 * (x - 15) / 6 : 1;
+const HILLS = window.COURSE_HILLS;
+function hillAt(m){
+  const x = Math.max(0, Math.min(FULL, m)) / HILLS.step, i = Math.min(HILLS.cum.length - 2, Math.floor(x));
+  return HILLS.cum[i] + (HILLS.cum[i + 1] - HILLS.cum[i]) * (x - i);
+}
+function effort(a, b, pace){
+  if (b <= a) return 0;
+  const k = SLOW * Math.min(1, Math.max(0, (pace / 60e3 - 5) / 1.25));
+  const n = Math.max(1, Math.ceil((b - a) / 0.05)), h = (b - a) / n;
+  let sum = 0;
+  for (let i = 0; i < n; i++){ const x = a + (i + .5) * h; sum += (hillAt(x + h / 2) - hillAt(x - h / 2)) * (1 + k * slowShape(x)); }
+  return sum;
+}
+
+function estimate(r, t){
+  const s = r.splits;
+  if (!s.length) return {state: 'waiting'};
+  const last = s[s.length - 1];
+  if (last.point === 'FINISH') return {state: 'finished', last, miles: FULL, est: FULL};
+  const startT = s[0].point === 'START' ? s[0].t : last.t - (netMs(last.net) || 0);
+  let pace = null, base = null;   // pace: real min/mi for the card. base: per effort mile, for predictions
+  if (last.miles > 0.9){
+    const back = [...s].reverse().find(x => last.miles - x.miles >= 4.5);
+    const raw = (last.t - startT) / last.miles;
+    pace = 0.5 * raw + 0.5 * (back ? (last.t - back.t) / (last.miles - back.miles) : raw);
+    const overall = (last.t - startT) / effort(0, last.miles, raw);
+    const recent = back ? (last.t - back.t) / effort(back.miles, last.miles, raw) : overall;
+    base = 0.3 * overall + 0.7 * recent;   // recent counts more: it catches someone slowing more than most
+  }
+  const usePace = pace || DEFAULT_PACE, useBase = base || DEFAULT_PACE;
+  const next = matMiles.find(m => m > last.miles + 0.01) ?? FULL;
+  const since = Math.max(0, t - last.t);
+  let est = last.miles;
+  while (est < next - 0.03 && effort(last.miles, est + 0.02, usePace) * useBase <= since) est += 0.02;
+  const overdue = pace && since > effort(last.miles, next, pace) * base * 1.35 + 3 * 60e3;
+  return {state: 'running', last, miles: last.miles, est, pace, usePace, base, useBase, next, since, overdue, startT};
+}
+
+// When will they reach `mile`? Anchored on their last mat before it, so it firms up as
+// they get close: exact between the two mats around it, a widening window further back.
+function etaAt(r, e, mile, t){
+  if (e.state === 'waiting') return {state: 'unknown'};
+  const s = r.splits;
+  const before = [...s].reverse().find(x => x.miles < mile);
+  const after = s.find(x => x.miles >= mile);
+  if (before && after){
+    const f = (mile - before.miles) / (after.miles - before.miles);
+    return {state: 'passed', t: before.t + (after.t - before.t) * f};
+  }
+  if (!before) return {state: 'unknown'};
+  let center = before.t + effort(before.miles, mile, e.usePace || DEFAULT_PACE) * (e.useBase || DEFAULT_PACE);
+  if (center < t - 2 * 60e3){
+    if (mile < FULL) return {state: 'passed', t: center, approx: true};
+    center = t + 60e3; // overdue at the finish: they're still out there
+  }
+  // Lopsided on purpose: in 2025 runners came in up to ~7% of the lead time early but ~12% late
+  // (someone hitting the wall). Those widths held 85% of 1,744 replayed estimates.
+  // Elites run even splits, so sub-6:00/mi runners get narrower windows (not backtested).
+  const lead = center - before.t, amateur = Math.min(1, Math.max(0, (e.usePace / 60e3 - 5) / 1));
+  const early = 60e3 + lead * (e.pace ? 0.03 + 0.04 * amateur : 0.15), late = 60e3 + lead * (e.pace ? 0.04 + 0.08 * amateur : 0.2);
+  const round = center - t > 20 * 60e3 ? 5 * 60e3 : 60e3;
+  const lo = Math.floor((center - early) / round) * round, hi = Math.ceil((center + late) / round) * round;
+  const state = Math.abs(center - t) < 90e3 ? 'now' : 'coming';
+  return {state, center, lo, hi, until: center - t, firm: mile - before.miles < 1.1 && !!e.pace, net: center - e.startT};
+}
+const homeEta = (r, e, t) => etaAt(r, e, HOME.mile, t);
+const hm = ms => { const m = Math.round(ms / 60e3); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); };
+
+// ---- Maps ---------------------------------------------------------------
+const TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+const LABELS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}';
+const ATTR = 'Map &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors · timing: RTRT.me';
+const courseLL = POLY.map(p => [p[0], p[1]]);
+function makeMap(el, opts){
+  // On a phone the maps hold still, so a swipe scrolls the page instead of dragging the map.
+  const touch = matchMedia('(max-width:900px) and (pointer:coarse)').matches;
+  const m = L.map(el, {zoomControl: false, zoomSnap: 0.1, scrollWheelZoom: !touch, dragging: !touch, touchZoom: !touch,
+    doubleClickZoom: !touch, attributionControl: opts.attr});
+  L.tileLayer(TILES, {maxZoom: 16, attribution: ATTR}).addTo(m);
+  if (opts.labels) L.tileLayer(LABELS, {maxZoom: 16, opacity: .7}).addTo(m);
+  L.polyline(courseLL, {color: '#5b7cff', weight: opts.wide ? 26 : 16, opacity: .14, interactive: false}).addTo(m);
+  L.polyline(courseLL, {color: '#7f99ff', weight: opts.wide ? 6 : 4, opacity: .85, interactive: false}).addTo(m);
+  return m;
+}
+const label = (m, ll, html) => L.marker(ll, {interactive: false, icon: L.divIcon({className: '', iconSize: [0, 0], html})}).addTo(m);
+const homeIcon = small => L.divIcon({className: '', iconSize: [0, 0],
+  html: `<div class="homepin ${small ? 'small' : ''}"><div class="pin"><span>🏠</span></div><div class="lbl">${esc(HOME.name)}</div></div>`});
+
+const whole = makeMap('wholemap', {attr: false});
+[5, 10, 13.1, 15, 20, 25].forEach(m => {
+  L.circleMarker(at(m), {radius: 4, color: '#0b0f17', weight: 2, fillColor: '#cfd8ff', fillOpacity: 1, interactive: false}).addTo(whole);
+  label(whole, at(m), `<div class="mm" style="transform:translate(8px,-8px)">${m === 13.1 ? 'HALF' : 'MI ' + m}</div>`);
+});
+label(whole, at(0), '<div class="endpt" style="transform:translate(-110%,-50%)">START</div>');
+label(whole, at(FULL), '<div class="endpt" style="transform:translate(12px,-50%)">FINISH</div>');
+L.marker([HOME.lat, HOME.lng], {interactive: false, icon: homeIcon(true), zIndexOffset: -100}).addTo(whole);
+
+const near = makeMap('nearmap', {attr: true, labels: true, wide: true});
+const nearMats = COURSE.points.filter(p => p[1] > NEAR[0] - 0.2 && p[1] < NEAR[1] + 0.2 && /^\d+M$/.test(p[0])).map(p => {
+  L.circleMarker(at(p[1]), {radius: 6, color: '#0b0f17', weight: 3, fillColor: '#cfd8ff', fillOpacity: 1, interactive: false}).addTo(near);
+  return {point: p[0], mk: label(near, at(p[1]), ''), key: null};
+});
+// Each mile marker near home lists who has actually crossed it and when (real mat times, not estimates).
+function drawMats(list){
+  list = list.filter(({r}) => !r.lead);   // leaders' door time is on their card; keep these lists short
+  for (const m of nearMats){
+    const rows = list.map(({r}) => ({r, s: r.splits.find(s => s.point === m.point)})).filter(x => x.s).sort((a, b) => a.s.t - b.s.t);
+    const html = `<div class="matbox"><div class="mat">MILE ${m.point.replace('M', '')}</div>${rows.map(({r, s}) =>
+      `<div class="matrow" style="--c:${r.color}"><b>${esc(r.name)}</b>${hhmm(s.t)}</div>`).join('')}</div>`;
+    if (html !== m.key){ m.key = html; m.mk.setIcon(L.divIcon({className: '', iconSize: [0, 0], html})); }
+  }
+}
+L.circle(at(HOME.mile), {radius: 70, color: '#ffd23f', weight: 2, dashArray: '6 6', fillColor: '#ffd23f', fillOpacity: .08, interactive: false}).addTo(near);
+L.marker([HOME.lat, HOME.lng], {interactive: false, icon: homeIcon(false), zIndexOffset: -100}).addTo(near);
+$('#homename').textContent = HOME.name;
+$('#neartitle').innerHTML = `Our block<span>Lafayette Ave · mile ${HOME.mile.toFixed(1)}</span>`;
+$('#nearpane').classList.add('big-tags');
+
+const MAPS = {near, whole};
+function fitAll(){
+  near.invalidateSize(); whole.invalidateSize();
+  near.fitBounds(L.latLngBounds(segment(NEAR[0], NEAR[1])), {padding: [40, 40]});
+  whole.fitBounds(L.latLngBounds(courseLL), {padding: [24, 24]});
+}
+fitAll();
+let fitTimer; new ResizeObserver(() => { clearTimeout(fitTimer); fitTimer = setTimeout(fitAll, 150); }).observe($('main'));
+
+function drawRunnerOnMaps(r, e){
+  const show = e.state !== 'waiting';
+  for (const [id, m] of Object.entries(MAPS)){
+    let g = r.L[id];
+    if (!g){
+      g = r.L[id] = {
+        band: L.polyline([], {color: r.color, weight: id === 'near' ? 14 : 9, opacity: .5, lineCap: 'round', interactive: false}),
+        mat: L.circleMarker([0, 0], {radius: id === 'near' ? 8 : 6, color: '#0b0f17', weight: 2, fillColor: r.color, fillOpacity: 1, interactive: false}),
+        pin: L.marker([0, 0], {interactive: false}), key: ''};
+    }
+    [g.band, g.mat, g.pin].forEach(l => show ? (m.hasLayer(l) || l.addTo(m)) : l.remove());
+    if (!show) continue;
+    g.band.setLatLngs(e.est > e.miles ? segment(e.miles, e.est) : []);
+    g.mat.setLatLng(at(e.miles));
+    g.pin.setLatLng(at(e.est));
+    g.pin.setZIndexOffset(Math.round(e.est * 100));
+    const key = [r.name, r.color, e.state, r.photo ? r.photo.length : 0].join('|');
+    if (key !== g.key){
+      g.key = key;
+      g.pin.setIcon(L.divIcon({className: '', iconSize: [0, 0], html:
+        `<div class="rm ${e.state === 'finished' ? 'done' : ''}" style="--c:${r.color}"><div class="ring"></div><div class="tag">${r.photo ? `<img src="${r.photo}" alt="">` : ''}${esc(r.name)}${e.state === 'finished' ? ' 🏁' : ''}</div></div>`}));
+    }
+  }
+}
+// Name tags dodge each other. For each runner (leader first) try spots around its dot and
+// keep the one that covers the least of: other runners' dots, tags already placed, fixed
+// labels (house, mats, start/finish, pro pills) and the panels floating over the map.
+const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+  * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+function placeTags(list){
+  const on = list.filter(x => x.e.state !== 'waiting').sort((a, b) => b.e.est - a.e.est);
+  for (const [id, m] of Object.entries(MAPS)){
+    const box = m.getContainer().getBoundingClientRect();
+    if (!box.width) continue;
+    const rel = el => { const r = el.getBoundingClientRect(); return {x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height}; };
+    const fixed = [...m.getContainer().parentElement.querySelectorAll('.ptitle, .hu, .homepin .lbl, .homepin .pin, .matbox, .endpt')]
+      .filter(el => el.offsetParent).map(rel);
+    const dots = on.map(({r}) => { const p = m.latLngToContainerPoint(r.L[id].pin.getLatLng()); return {pid: r.pid, p, x: p.x - 15, y: p.y - 15, w: 30, h: 30}; });
+    const placed = [];
+    for (const {r} of on){
+      const tag = r.L[id].pin.getElement()?.querySelector('.tag');
+      if (!tag) continue;
+      const w = tag.offsetWidth, h = tag.offsetHeight, {p} = dots.find(d => d.pid === r.pid);
+      const spots = [[16, -h/2], [-16 - w, -h/2], [10, -h - 12], [10, 12], [-10 - w, -h - 12], [-10 - w, 12],
+        [18, -1.5*h - 18], [18, .5*h + 18], [-18 - w, -1.5*h - 18], [-18 - w, .5*h + 18]];
+      let best = null;
+      spots.forEach(([dx, dy], i) => {
+        const a = {x: p.x + dx, y: p.y + dy, w, h};
+        let cost = i * 4; // mild preference for the first (right-hand) spots
+        for (const b of fixed) cost += overlap(a, b);
+        for (const b of placed) cost += overlap(a, b) * 2;
+        for (const d of dots) if (d.pid !== r.pid) cost += overlap(a, d) * 3;
+        cost += (Math.max(0, -a.x) + Math.max(0, a.x + w - box.width) + Math.max(0, -a.y) + Math.max(0, a.y + h - box.height)) * h * 2;
+        if (!best || cost < best.cost) best = {cost, a, dx, dy};
+      });
+      tag.style.left = best.dx + 'px'; tag.style.top = best.dy + 'px';
+      placed.push(best.a);
+    }
+  }
+}
+
+// ---- Course strip -------------------------------------------------------
+$('#track').innerHTML = BOROS.map(([n, a, b, c]) => `<div class="boro" style="width:${(b-a)/FULL*100}%;background:${c}">${n}</div>`).join('');
+$('#strip').insertAdjacentHTML('beforeend', [0,2,4,6,10,12,13.1,14,16,18,20,22,24,26.2].map(m =>
+  `<div class="tick" style="left:${m/FULL*100}%">${m === 13.1 ? '½' : m === 26.2 ? '🏁' : m}</div>`).join('')
+  + `<div class="shome" style="left:${HOME.mile/FULL*100}%"></div>`);
+const stripLayer = document.createElement('div'); $('#strip').appendChild(stripLayer);
+function drawStrip(list){
+  const W = $('#strip').clientWidth || 1000;
+  const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const charW = Math.max(9, W / 200);
+  const rows = []; // greedy label rows so names never overlap
+  const items = list.filter(x => x.e.state !== 'waiting').sort((a, b) => a.e.est - b.e.est).map(({r, e}) => {
+    const x = e.est / FULL * W, w = r.name.length * charW + 26;
+    let row = rows.findIndex(end => end < x - w/2);
+    if (row < 0){ row = rows.length; rows.push(0); }
+    rows[row] = x + w/2;
+    return {r, e, row};
+  });
+  const rowH = Math.max(20, fs * 1.3), base = 48;
+  $('#strip').style.setProperty('--h', (base + Math.max(1, rows.length) * rowH + 4) + 'px');
+  stripLayer.innerHTML = items.map(({r, e, row}) => {
+    const a = e.miles / FULL * 100, b = e.est / FULL * 100;
+    return `<div style="--c:${r.color}">
+      ${b > a ? `<div class="sband" style="left:${a}%;width:${b - a}%"></div>` : ''}
+      <div class="sdot" style="left:${a}%"></div>
+      ${e.state === 'running' ? `<div class="sghost" style="left:${b}%"></div>` : ''}
+      <div class="slabel" style="left:${b}%;bottom:${base + row * rowH}px;--stem:${base - 34 + row * rowH}px">${esc(r.name)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ---- Board --------------------------------------------------------------
+function card(r, e, h, t){
+  const pct = e.state === 'waiting' ? 0 : e.miles / FULL * 100, pct2 = e.state === 'waiting' ? 0 : e.est / FULL * 100;
+  const fin = e.state === 'running' ? etaAt(r, e, FULL, t) : null;
+  const door = h.state === 'coming' || h.state === 'now';
+  // Projected finish: net time and the average pace it implies, e.g. "~4:05 · 9:21/mi".
+  const finWhat = fin?.lo ? (e.pace ? `~${hm(fin.net)} · ${paceStr(fin.net / FULL)}/mi` : 'rough') : '';
+  let cls = e.state, hero = '', facts = '';
+  // Hero: the one thing to know about this runner right now.
+  if (h.state === 'now'){
+    cls += ' soon';
+    hero = `<div class="ckicker">Our door</div><div class="cbig now">NOW</div>`;
+  } else if (door){
+    if (h.until < HEADS_UP) cls += ' soon';
+    hero = `<div class="ckicker">Our door · ${e.pace ? mins(h.until) + ' min' : '<span class="warn">rough</span>'}</div>
+      <div class="cbig ${e.pace ? '' : 'rough'}">${rng(h.lo, h.hi)}</div>`;
+  } else if (e.state === 'finished'){
+    hero = `<div class="ckicker">Finished</div><div class="cbig">${netStr(e.last.net)}</div>`;
+  } else if (fin?.lo && e.pace){
+    hero = `<div class="ckicker">Finish · ${finWhat}</div><div class="cbig">${rng(fin.lo, fin.hi)}</div>`;
+  } else if (e.state === 'running'){
+    hero = `<div class="ckicker">Near mile</div><div class="cbig">${milesWord(e.est)}</div>`;
+  }
+  // Facts: last mat and when, pace, and whether they've passed us. Nothing else.
+  if (e.state === 'waiting'){
+    const wave = WAVES.find(w => w > t - 5 * 60e3);   // still counts as next for 5 min after the gun
+    facts = r.error ? `<span class="warn">Can’t reach the timing feed</span>` : !r.raw ? 'Checking…'
+      : wave ? `Not started · next wave ${hhmm(wave)}` : 'Not started';
+  } else {
+    const bits = e.state === 'finished'
+      ? [r.lead && `Won the ${r.lead}`, `Done at <b>${hhmm(e.last.t)}</b>`, e.last.avg && `${esc(e.last.avg.replace(/^0/, ''))}/mi`]
+      : [r.lead && `Leads the ${r.lead}`, `<b>${placeName(e.last.point)}</b> at ${hhmm(e.last.t)}`, e.pace && `${paceStr(e.pace)}/mi`,
+         e.overdue && `<span class="warn">late to ${placeName(COURSE.points.find(p => p[1] === e.next)?.[0] || 'FINISH')}</span>`];
+    if (h.state === 'passed') bits.push(`<span class="hm">🏠 ${h.approx ? '~' : ''}${hhmm(h.t)}</span>`);
+    facts = bits.filter(Boolean).map(b => `<span>${b}</span>`).join(' · ');
+  }
+  // Finish flag at the end of the bar: estimated clock time while running, real race time once done.
+  const flag = e.state === 'finished' ? `<span class="cflag done" title="Finished at ${hhmm(e.last.t)}">🏁 ${netStr(e.last.net)}</span>`
+    : fin?.center ? `<span class="cflag" title="Estimated finish, ${rng(fin.lo, fin.hi)}">🏁 ~${clockStr(fin.center)}</span>` : '';
+  // Where to catch them next. While they're still heading to our door, the finish rides along.
+  let chips = '';
+  if (e.state === 'running'){
+    const ahead = SPOTS.filter(([m]) => m > e.est + 0.05).map(([m, a, b]) => ({a, b, x: etaAt(r, e, m, t)})).filter(c => c.x.lo);
+    // The finish always has a place on the card: here while the door is the big number, in the
+    // big number once they've passed us.
+    const finHero = !door && fin?.lo && e.pace;
+    chips = ahead.slice(0, finHero ? 3 : 2).map(c => `<span class="chip" title="${c.b}"><i>${c.a}</i><b>${rng(c.x.lo, c.x.hi, true)}</b></span>`).join('')
+      + (!finHero && fin?.lo ? `<span class="chip fin" title="Finish line, Central Park"><i>🏁 ${finWhat}</i><b>${rng(fin.lo, fin.hi)}</b></span>` : '');
+  }
+  // Leader cards: flag for a face, nothing to rename, remove or add a photo to.
+  const top = r.lead
+    ? `<div class="crow"><div class="ava flag" title="${esc(r.full)}">${r.flag || r.pro.tag}</div>
+      <div class="cmain"><div class="cname" title="${esc(r.full)}">${esc(r.name)}</div>`
+    : `<button class="cx" data-rm="${esc(r.pid)}" title="Remove">×</button>
+    <div class="crow"><div class="ava ${r.photo ? 'has' : ''}" data-photo="${esc(r.pid)}" title="Click to ${r.photo ? 'change' : 'add'} a photo"
+        ${r.photo ? `style="background-image:url('${r.photo}')"` : ''}>${esc(r.name.charAt(0).toUpperCase())}</div>
+      <div class="cmain"><div class="cname" data-rename="${esc(r.pid)}" title="${esc(r.full)}${r.bib ? ' · #' + esc(r.bib) : ''} · click to rename">${esc(r.name)}</div>`;
+  return `<div class="card ${cls} ${r.lead ? 'lead' : ''}" style="--c:${r.color}">
+    ${top}
+        <div class="cfacts">${facts}</div></div>
+      ${hero ? `<div class="chero">${r.lead ? `<span class="lk">${door || h.state === 'now' ? '🏠' : '🏁'}</span>` : ''}${hero}</div>` : ''}</div>
+    ${chips ? `<div class="spots">${chips}</div>` : ''}
+    ${e.state === 'waiting' ? '' : `<div class="cbarrow"><div class="cbar"><u style="left:${pct}%;width:${Math.max(0, pct2 - pct)}%"></u><i style="width:${pct}%"></i><s style="left:${HOME.mile/FULL*100}%"></s></div>${flag}</div>`}
+  </div>`;
+}
+let boardKey = '';
+function drawBoard(list, t){
+  if (!list.length){
+    $('#board').innerHTML = `<div class="empty"><div class="big">Who are we cheering for?</div>Press <b>+ Add runner</b> and search by name or bib. The left map shows when each runner will pass ${esc(HOME.name)}. Positions update about once a minute from the official timing mats.</div>`;
+    boardKey = ''; return;
+  }
+  // Coming to the door first (soonest on top), then everyone else by position, our people above the leaders.
+  const rank = ({e, h}) => h.state === 'now' ? 0 : h.state === 'coming' ? 1 : e.state === 'running' ? 2 : e.state === 'finished' ? 3 : 4;
+  const sorted = [...list].sort((a, b) => rank(a) - rank(b)
+    || (rank(a) >= 2 ? !!a.r.lead - !!b.r.lead : 0)
+    || (rank(a) <= 1 ? a.h.center - b.h.center : rank(a) === 3 ? a.e.last.t - b.e.last.t : (b.e.est || 0) - (a.e.est || 0)));
+  const html = sorted.map(({r, e, h}) => card(r, e, h, t)).join('');
+  if (html !== boardKey){ $('#board').innerHTML = html; boardKey = html; fitBoard(); }
+}
+function fitBoard(){
+  const b = $('#board');
+  if (getComputedStyle(b).overflowY === 'visible') return; // phone layout scrolls the page
+  b.classList.remove('leanlead', 'tight', 'tighter', 'tightest');
+  for (const c of ['leanlead', 'tight', 'tighter', 'tightest']){
+    if (b.scrollHeight <= b.clientHeight + 1) break;
+    b.classList.add(c);
+  }
+}
+new ResizeObserver(fitBoard).observe($('#board'));
+let headsKey = '';
+function drawHeads(list){
+  const up = list.filter(x => x.h.state === 'now' || (x.h.state === 'coming' && x.h.until < HEADS_UP))
+    .sort((a, b) => a.h.center - b.h.center).slice(0, 4);
+  let html = '';
+  if (up.length === 1){
+    const {r, h} = up[0];
+    html = h.state === 'now'
+      ? `<div class="hu now" style="--c:${r.color}"><div class="bell">📣</div><div><div class="h1"><em>${esc(r.name)}</em> is passing our block now!</div><div class="h2">Cheer loud · Lafayette Ave, mile ${HOME.mile.toFixed(1)}</div></div></div>`
+      : `<div class="hu" style="--c:${r.color}"><div class="bell">🔔</div><div><div class="h1"><em>${esc(r.name)}</em> at our door ${span(h.lo, h.hi)}</div><div class="h2">${inMin(h.until)} · ${h.firm ? 'past the mile 8 mat, this is a tight estimate' : 'head down a few minutes early'}</div></div></div>`;
+  } else if (up.length){
+    // Several at once: one panel, a row each, soonest first.
+    const now = up.some(x => x.h.state === 'now');
+    html = `<div class="hu multi ${now ? 'now' : ''}" style="--c:${up[0].r.color}"><div class="bell">${now ? '📣' : '🔔'}</div><div class="rows">
+      <div class="h2">${now ? 'Passing our block · cheer loud' : 'Coming to our door · head down a few minutes early'}</div>
+      ${up.map(({r, h}) => `<div class="row" style="--c:${r.color}"><em>${esc(r.name)}</em><span>${h.state === 'now' ? 'NOW' : rng(h.lo, h.hi)}</span><i>${h.state === 'now' ? '' : mins(h.until) + ' min'}</i></div>`).join('')}
+    </div></div>`;
+  }
+  if (html !== headsKey){ $('#heads').innerHTML = html; headsKey = html; }
+}
+
+// ---- Pro race -----------------------------------------------------------
+let prosKey = '';
+function drawPros(t){
+  const cols = [];
+  for (const p of PROS){
+    const b = proBoard(p, t);
+    if (!b?.length) continue;
+    const lead = b[0];
+    const where = lead.point === 'FINISH' ? 'Final' : placeName(lead.point);
+    const flag = iso => iso && iso.length === 2 ? flagOf(iso) + ' ' : '';
+    const gap = ms => { const sec = Math.round(ms / 1000); return sec < 1 ? 'even' : sec < 60 ? `+${sec}s` : '+' + paceStr(ms); };
+    const rows = b.slice(0, 3).map((s, i) => `<div><span>${flag(s.iso)}${esc(s.lname)}</span>
+      <em>${i === 0 ? netStr(s.net) : gap(Math.max(0, s.t - lead.t))}</em></div>`).join('');
+    cols.push(`<div class="pro"><h4>${p.title} · <b>${where}</b></h4>${rows}</div>`);
+  }
+  const html = cols.join('');
+  if (html !== prosKey){ $('#pros').innerHTML = html; $('#pros').classList.toggle('on', !!html); prosKey = html; }
+}
+
+// ---- Toasts -------------------------------------------------------------
+function toast(r, t1, t2, fin){
+  const el = document.createElement('div');
+  el.className = 'toast' + (fin ? ' fin' : '');
+  el.style.setProperty('--c', r.color);
+  el.innerHTML = `<div class="t1">${t1}</div><div class="t2">${t2}</div>`;
+  $('#toasts').prepend(el);
+  while ($('#toasts').children.length > 4) $('#toasts').lastChild.remove();
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 600); }, fin ? 30e3 : 12e3);
+}
+function splitToast(r, s){
+  if (s.point === 'FINISH' && r.lead) return toast(r, `🏁 ${r.flag || ''} ${esc(r.name)} wins the ${r.lead}’s race`, `${netStr(s.net)} · ${clockStr(s.t)}`, true);
+  if (s.point === 'FINISH') return toast(r, `🏁 ${esc(r.name)} finished!`, `${netStr(s.net)} · ${clockStr(s.t)}`, true);
+  toast(r, `${esc(r.name)} · ${placeName(s.point)}`, `${netStr(s.net)} on the clock${s.avg ? ' · ' + esc(s.avg) + ' /mi avg' : ''}`);
+}
+
+// ---- Render loop ---------------------------------------------------------
+function render(){
+  const t = now();
+  const list = [...runners, ...leaders(t)].map(r => {
+    r.splits = r.raw ? r.raw.filter(s => s.t <= t) : [];
+    if (r.seen >= 0 && r.splits.length > r.seen){
+      // Pop-ups only for the moments worth a cheer; the door has its own banner. Leaders: just the win.
+      const fresh = r.splits.slice(r.seen).filter(s => r.lead ? s.point === 'FINISH' : TOAST_POINTS.includes(s.point));
+      fresh.slice(-1).forEach(s => splitToast(r, s));
+    }
+    if (r.raw) r.seen = r.splits.length;
+    const e = estimate(r, t);
+    const h = homeEta(r, e, t);
+    r.done = e.state === 'finished';
+    return {r, e, h};
+  });
+  list.forEach(({r, e}) => drawRunnerOnMaps(r, e));
+  drawBoard(list.filter(x => !x.r.lead), t);   // leaders: map dots and the header ticker only
+  drawHeads(list);
+  drawStrip(list);
+  drawPros(t);
+  drawMats(list);
+  placeTags(list);
+  $('#clock').textContent = clockStr(t);
+  $('#live').className = SIM ? 'sim' : (Date.now() - lastOk < 3 * 60e3 ? 'on' : '');
+  $('#livetext').textContent = SIM ? `Replay ${EVENT.slice(-4)} · ${SPEED}×`
+    : !runners.length ? 'Ready' : lastOk ? `Live · updated ${ago(Date.now() - lastOk)}` : 'Connecting…';
+}
+setInterval(() => { schedule(); render(); }, 1000);
+
+// ---- UI -----------------------------------------------------------------
+$('#title').addEventListener('input', save);
+$('#title').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); e.target.blur(); } });
+// Photos: picked from this computer, shrunk to a small square, kept in this browser only.
+const picker = Object.assign(document.createElement('input'), {type: 'file', accept: 'image/*'});
+let photoFor = null;
+picker.addEventListener('change', () => {
+  const f = picker.files[0], r = runners.find(x => x.pid === photoFor);
+  picker.value = '';
+  if (!f || !r) return;
+  const img = new Image();
+  img.onload = () => {
+    const S = 160, c = Object.assign(document.createElement('canvas'), {width: S, height: S});
+    const k = Math.min(img.width, img.height);
+    c.getContext('2d').drawImage(img, (img.width - k) / 2, (img.height - k) / 3, k, k, 0, 0, S, S);
+    r.photo = c.toDataURL('image/jpeg', .85);
+    URL.revokeObjectURL(img.src);
+    try { localStorage.setItem('marathon-watch:photo:' + r.pid, r.photo); } catch {}
+    render();
+  };
+  img.src = URL.createObjectURL(f);
+});
+$('#board').addEventListener('click', e => {
+  const ph = e.target.closest('[data-photo]');
+  if (ph){ photoFor = ph.dataset.photo; picker.click(); return; }
+  const rm = e.target.closest('[data-rm]');
+  if (rm){ const r = runners.find(x => x.pid === rm.dataset.rm); if (r && confirm(`Remove ${r.name}?`)) removeRunner(r.pid); return; }
+  const rn = e.target.closest('[data-rename]');
+  if (rn){
+    const r = runners.find(x => x.pid === rn.dataset.rename);
+    const n = r && prompt(`Display name for ${r.full}:`, r.name);
+    if (n && n.trim()){ r.name = n.trim().slice(0, 24); Object.values(r.L).forEach(g => g.key = ''); save(); render(); }
+  }
+});
+const dlg = $('#dlg');
+function openDlg(){ dlg.classList.add('open'); $('#q').value = ''; $('#results').innerHTML = ''; $('#q').focus(); }
+function closeDlg(){ dlg.classList.remove('open'); }
+$('#addbtn').onclick = openDlg;
+dlg.addEventListener('click', e => { if (e.target === dlg) closeDlg(); });
+$('#sform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('#q').value.trim();
+  if (q.length < 2) return;
+  $('#results').innerHTML = '<div class="msg">Searching…</div>';
+  try {
+    const d = await api('profiles', `&max=25&search=${encodeURIComponent(q)}`);
+    const list = (d.list || []).filter(p => p.course === 'marathon' || !p.course);
+    if (!list.length){ $('#results').innerHTML = `<div class="msg">${/^\d+$/.test(q) ? `No runner has bib ${esc(q)} this year. Double-check the number, or try their name.` : 'No one found. Try the last name only, or their bib number.'}</div>`; return; }
+    $('#results').innerHTML = list.map(p => {
+      const added = runners.some(r => r.pid === p.pid);
+      const where = [p.city, p.state, p.country].filter(Boolean).join(', ');
+      return `<button class="res ${added ? 'added' : ''}" data-p='${esc(JSON.stringify({pid: p.pid, fname: p.fname, lname: p.lname, name: p.name, bib: p.bib_display || p.bib}))}'>
+        <div><div class="rn">${esc(p.name)}</div><div class="rm2">${p.bib_display || p.bib ? 'Bib ' + esc(p.bib_display || p.bib) + ' · ' : ''}${esc(where)}${p.sex ? ' · ' + esc(p.sex) : ''}</div></div>
+        <span class="radd">${added ? 'Added' : '+ Add'}</span></button>`;
+    }).join('');
+  } catch (err) {
+    $('#results').innerHTML = `<div class="msg">Couldn’t reach the timing feed (${esc(err.message)}). Try again in a moment.</div>`;
+  }
+});
+$('#results').addEventListener('click', e => {
+  const b = e.target.closest('.res'); if (!b) return;
+  const p = JSON.parse(b.dataset.p);
+  const first = (p.fname || p.name.split(' ')[0] || '').trim();
+  const clash = runners.some(r => r.name.split(' ')[0].toLowerCase() === first.toLowerCase());
+  const name = clash && p.lname ? `${first} ${p.lname[0]}.` : first;
+  addRunner({pid: p.pid, name: name || p.name, full: p.name, bib: p.bib});
+  b.classList.add('added'); b.querySelector('.radd').textContent = 'Added';
+});
+$('#sharebtn').onclick = async () => {
+  const u = new URL(location.href);
+  u.searchParams.set('runners', runners.map(r => encodeURIComponent(r.pid) + '~' + encodeURIComponent(r.name)).join(','));
+  u.searchParams.set('title', $('#title').textContent.trim());
+  try { await navigator.clipboard.writeText(u.toString()); $('#sharebtn').textContent = 'Copied!'; }
+  catch { prompt('Copy this link:', u.toString()); }
+  setTimeout(() => $('#sharebtn').textContent = 'Copy link', 2000);
+};
+const fs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
+$('#fsbtn').onclick = fs;
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,[contenteditable]')) { if (e.key === 'Escape') closeDlg(); return; }
+  if (e.key === 'Escape') closeDlg();
+  if (e.key === 'a' || e.key === 'A'){ e.preventDefault(); openDlg(); }
+  if (e.key === 'f' || e.key === 'F') fs();
+});
+
+load();
+render();
+schedule(true);
+</script>
+</body>
+</html>
